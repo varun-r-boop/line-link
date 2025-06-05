@@ -12,14 +12,20 @@
   "activationEvents": [],
   "main": "./extension.js",
   "contributes": {
-    "commands": [ {
+    "commands": [{
       "command": "extension.generateLink",
-      "title": "Generate Link for Line"
-  },
-  {
+      "title": "Line Link: Generate Link"
+    },
+    {
       "command": "extension.openFile",
-      "title": "Open File at Line"
-  }]
+      "title": "Line Link: Open from Link"
+    }],
+    "keybindings": [{
+      "command": "extension.generateLink",
+      "key": "ctrl+shift+l",
+      "mac": "cmd+shift+l",
+      "when": "editorTextFocus"
+    }]
   },
   "configuration": {
     "type": "object",
@@ -35,7 +41,10 @@
   "scripts": {
     "lint": "eslint .",
     "pretest": "npm run lint",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "register-protocol": "node register-protocol.js"
   },
   "devDependencies": {
     "@types/vscode": "^1.60.0",
@@ -45,5 +54,8 @@
     "typescript": "^5.4.5",
     "@vscode/test-cli": "^0.0.9",
     "@vscode/test-electron": "^2.4.0"
+  },
+  "dependencies": {
+    "simple-git": "^3.22.0"
   }
 }
