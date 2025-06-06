@@ -1,70 +1,109 @@
 const vscode = require('vscode');
 const path = require('path');
+const { simpleGit } = require('simple-git');
+
+// Function to get repository information
+async function getRepositoryInfo(filePath) {
+    try {
+        // Get the directory containing the file
+        const directory = path.dirname(filePath);
+        const git = simpleGit(directory);
+        const isRepo = await git.checkIsRepo();
+        
+        if (isRepo) {
+            // Get the remote URL
+            const remotes = await git.getRemotes(true);
+            const origin = remotes.find(r => r.name === 'origin');
+            if (origin) {
+                // Get the relative path from repository root
+                const repoRoot = await git.revparse(['--show-toplevel']);
+                const relativePath = path.relative(repoRoot, filePath);
+                return {
+                    type: 'git',
+                    identifier: origin.refs.push,
+                    relativePath: relativePath.replace(/\\/g, '/') // Normalize path separators
+                };
+            }
+        }
+        
+        // Fallback for non-Git repositories
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (workspaceFolders && workspaceFolders.length > 0) {
+            const workspaceRoot = workspaceFolders[0].uri.fsPath;
+            const relativePath = path.relative(workspaceRoot, filePath);
+            return {
+                type: 'workspace',
+                identifier: workspaceFolders[0].name,
+                relativePath: relativePath.replace(/\\/g, '/')
+            };
+        }
+        
+        throw new Error('Could not determine repository information');
+    } catch (error) {
+        console.error('Error getting repository info:', error);
+        throw error;
+    }
+}
 
 function activate(context) {
     // Register the command to generate the link
-    const generateLinkCommand = vscode.commands.registerCommand('extension.generateLink', () => {
+    const generateLinkCommand = vscode.commands.registerCommand('extension.generateLink', async () => {
         const editor = vscode.window.activeTextEditor;
         if (editor) {
-            const document = editor.document;
-            const selection = editor.selection;
-            const line = selection.active.line + 1; // VS Code lines are 0-based
-            const filePath = document.uri.fsPath;
+            try {
+                const document = editor.document;
+                const selection = editor.selection;
+                const line = selection.active.line + 1; // VS Code lines are 0-based
+                const filePath = document.uri.fsPath;
 
-            // Get the base path from the configuration
-            const config = vscode.workspace.getConfiguration('lineLinker');
-            const basePath = config.get('repoBasePath');
-
-            if (!basePath) {
-                vscode.window.showErrorMessage('Please configure the repository base path in settings.');
-                return;
+                // Get repository information
+                const repoInfo = await getRepositoryInfo(filePath);
+                
+                // Generate the link
+                const link = `vscode://file/${filePath}:${line}`;
+                
+                // Copy to clipboard
+                await vscode.env.clipboard.writeText(link);
+                vscode.window.showInformationMessage(`Link copied to clipboard: ${link}`);
+            } catch (error) {
+                vscode.window.showErrorMessage(`Failed to generate link: ${error.message}`);
             }
-
-            // Ensure the base path and file path are properly formatted
-            const fileUri = vscode.Uri.file(filePath).toString();
-            const link = `vscode://file/${fileUri.replace(/^[^:]+:/, '')}&line=${line}`; // Remove 'file:' prefix
-            vscode.env.clipboard.writeText(link);
-            vscode.window.showInformationMessage(`Link copied to clipboard: ${link}`);
         }
     });
 
     // Register the command to open the file at a specific line
-    const openFileCommand = vscode.commands.registerCommand('extension.openFile', async (uri) => {
-        const query = new URLSearchParams(uri.query);
-        const relativePath = uri.path.slice(1); // Remove leading slash
-        const line = parseInt(query.get('line'), 10) - 1; // VS Code lines are 0-based
+    const openFileCommand = vscode.commands.registerCommand('extension.openFile', async () => {
+        try {
+            // Prompt user for the link
+            const link = await vscode.window.showInputBox({
+                prompt: 'Paste the line link',
+                placeHolder: 'vscode://file/...'
+            });
 
-        // Get the base path from the configuration
-        const config = vscode.workspace.getConfiguration('lineLinker');
-        const basePath = config.get('repoBasePath');
+            if (!link) {
+                return;
+            }
 
-        if (!basePath) {
-            vscode.window.showErrorMessage('Please configure the repository base path in settings.');
-            return;
-        }
+            // Parse the link
+            const uri = vscode.Uri.parse(link);
+            const line = parseInt(uri.fragment, 10) - 1; // VS Code lines are 0-based
 
-        const filePath = path.join(basePath, relativePath);
-
-        if (filePath) {
-            const document = await vscode.workspace.openTextDocument(filePath);
+            // Open the file
+            const document = await vscode.workspace.openTextDocument(uri);
             const editor = await vscode.window.showTextDocument(document);
 
+            // Navigate to the line
             const range = editor.document.lineAt(line).range;
             editor.selection = new vscode.Selection(range.start, range.end);
             editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+        } catch (error) {
+            vscode.window.showErrorMessage(`Failed to open file: ${error.message}`);
         }
     });
 
     // Register the commands in the context
     context.subscriptions.push(generateLinkCommand);
     context.subscriptions.push(openFileCommand);
-
-    // Register the URI handler
-    context.subscriptions.push(vscode.window.registerUriHandler({
-        handleUri(uri) {
-            vscode.commands.executeCommand('extension.openFile', uri);
-        }
-    }));
 }
 
 function deactivate() {}

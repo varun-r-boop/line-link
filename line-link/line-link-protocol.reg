@@ -1,0 +1,8 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CLASSES_ROOT\line-link]
+@="URL:Line Link Protocol"
+"URL Protocol"=""
+
+[HKEY_CLASSES_ROOT\line-link\shell\open\command]
+@="\"code\" --open-url \"%1\""
